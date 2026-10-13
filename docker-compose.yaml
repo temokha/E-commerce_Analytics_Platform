@@ -25,6 +25,15 @@ services:
       timeout: 5s
       retries: 5
 
+  airflow-init:
+    image: apache/airflow:3.3.2-python3.12
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME}
+    command: db migrate
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+
 volumes:
   silo_data:
   airflow_db_data:
