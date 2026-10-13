@@ -11,5 +11,20 @@ services:
     volumes:
       - silo_data:/data
 
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   silo_data:
+  airflow_db_data:
