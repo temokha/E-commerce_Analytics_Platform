@@ -8,6 +8,11 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
     PYTHONPATH: /opt/airflow/include
+    S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
+    S3_BUCKET: ${S3_BUCKET}
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    AWS_DEFAULT_REGION: us-east-1
   volumes:
     - ./dags:/opt/airflow/dags
     - ./include:/opt/airflow/include
