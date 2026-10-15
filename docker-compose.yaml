@@ -66,6 +66,23 @@ services:
     <<: *airflow-common
     command: dag-processor
 
+  dwh-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DWH_DB_USER}
+      POSTGRES_PASSWORD: ${DWH_DB_PASSWORD}
+      POSTGRES_DB: ${DWH_DB_NAME}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - dwh_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   silo_data:
   airflow_db_data:
+  dwh_db_data:
