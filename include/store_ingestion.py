@@ -1,5 +1,6 @@
 import json
 import os
+
 import boto3
 import requests
 from requests.adapters import HTTPAdapter
@@ -7,19 +8,28 @@ from urllib3.util.retry import Retry
 
 
 def load_store_entity(entity: str, prefix: str) -> None:
+    allowed_entities = {
+        "orders",
+        "order_items",
+        "products",
+        "categories",
+        "customers",
+    }
+    if entity not in allowed_entities:
+        raise ValueError(f"Unknown entity: {entity}")
+
     bucket = os.environ["S3_BUCKET"]
+    source_url = f"https://api.sondahub.com/data/store/{entity}.json"
+    object_key = f"{prefix}/{entity}.json"
+    success_key = f"{prefix}/_SUCCESS"
+
     s3 = boto3.client(
         "s3",
         endpoint_url=os.environ["S3_ENDPOINT_URL"],
     )
 
-    # При повторном выполнении убираем прежнюю отметку об успехе.
-    s3.delete_object(Bucket=bucket, Key=f"{prefix}/_SUCCESS")
-
-    page = 1
-    loaded_count = 0
-    expected_total = None
-    expected_pages = None
+    # Повторная попытка должна заново подтвердить успешную загрузку.
+    s3.delete_object(Bucket=bucket, Key=success_key)
 
     with requests.Session() as session:
         retry_policy = Retry(
@@ -28,83 +38,61 @@ def load_store_entity(entity: str, prefix: str) -> None:
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["GET"],
             respect_retry_after_header=True,
+            raise_on_status=False,
         )
-
         session.mount(
             "https://",
             HTTPAdapter(max_retries=retry_policy),
         )
-        while True:
-            response = session.get(
-                f"https://api.sondahub.com/v1/store/{entity}",
-                params={"page": page, "limit": 100},
-                timeout=30,
+
+        response = session.get(source_url, timeout=(10, 120))
+
+        if not response.ok:
+            print(
+                f"{entity}: HTTP {response.status_code}; "
+                f"Retry-After: {response.headers.get('Retry-After')}"
             )
-            if response.status_code == 429:
-                print(f"429 response URL: {response.url}")
+        response.raise_for_status()
 
-                for header in [
-                    "Retry-After",
-                    "RateLimit",
-                    "RateLimit-Policy",
-                    "X-RateLimit-Limit",
-                    "X-RateLimit-Remaining",
-                    "X-RateLimit-Reset",
-                    "Server",
-                ]:
-                    print(f"{header}: {response.headers.get(header)}")
+        payload = response.json()
 
-                print(f"Response body: {response.text[:1000]}")
-            response.raise_for_status()
-            payload = response.json()
-
-            meta = payload["meta"]
+        if isinstance(payload, list):
+            records = payload
+        elif isinstance(payload, dict) and isinstance(payload.get("data"), list):
             records = payload["data"]
+        else:
+            raise ValueError(f"{entity}: unexpected JSON structure")
 
-            if page == 1:
-                expected_total = meta["total"]
-                expected_pages = meta["pages"]
+        if not all(isinstance(record, dict) and "id" in record for record in records):
+            raise ValueError(f"{entity}: records must be objects with an id")
 
-            if (
-                meta["page"] != page
-                or meta["total"] != expected_total
-                or meta["pages"] != expected_pages
-            ):
-                raise ValueError("Pagination metadata changed during loading")
+        ids = [record["id"] for record in records]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"{entity}: duplicate ids found")
 
-            object_key = f"{prefix}/page_{page}.json"
+        # Сохраняем исходное содержимое файла без преобразований.
+        content = response.content
 
-            s3.put_object(
-                Bucket=bucket,
-                Key=object_key,
-                Body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                ContentType="application/json",
-            )
-
-            loaded_count += len(records)
-            print(f"{entity}: page {page}, saved {len(records)} records")
-
-            if page >= expected_pages:
-                break
-
-            page += 1
-
-    if loaded_count != expected_total:
-        raise ValueError(
-            f"Expected {expected_total} records, loaded {loaded_count}"
-        )
+    s3.put_object(
+        Bucket=bucket,
+        Key=object_key,
+        Body=content,
+        ContentType="application/json",
+    )
 
     summary = {
-        "pages": page,
-        "records": loaded_count,
-        "source_total": expected_total,
+        "entity": entity,
+        "source_url": source_url,
+        "object_key": object_key,
+        "records": len(records),
+        "bytes": len(content),
     }
 
     s3.put_object(
         Bucket=bucket,
-        Key=f"{prefix}/_SUCCESS",
-        Body=json.dumps(summary).encode("utf-8"),
+        Key=success_key,
+        Body=json.dumps(summary, ensure_ascii=False).encode("utf-8"),
         ContentType="application/json",
     )
 
-    print(f"{entity}: loading complete, {loaded_count} records, {page} pages")
+    print(f"{entity}: saved {len(records)} records to {object_key}")

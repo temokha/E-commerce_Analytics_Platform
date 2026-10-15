@@ -8,6 +8,7 @@ from store_ingestion import load_store_entity
     schedule=None,
     catchup=False,
     max_active_tasks=1,
+    max_active_runs=1,
     tags=["store", "raw"],
 )
 def raw_store_ingestion():
