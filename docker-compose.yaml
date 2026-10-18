@@ -22,6 +22,7 @@ x-airflow-common: &airflow-common
     - ./dags:/opt/airflow/dags
     - ./include:/opt/airflow/include
     - ./logs:/opt/airflow/logs
+    - ./sql:/opt/airflow/sql:ro
   depends_on:
     airflow-db:
       condition: service_healthy
