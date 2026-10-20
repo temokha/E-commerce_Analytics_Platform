@@ -59,3 +59,11 @@ CROSS JOIN currencies AS cur
 LEFT JOIN customer_orders AS co
     ON co.customer_id = c.id
    AND co.currency = cur.currency;
+
+SELECT *
+FROM dm.customer_metrics
+ORDER BY merchandise_amount DESC
+LIMIT 10;
+
+SELECT COUNT(*) AS rows_count
+FROM dm.customer_metrics;
